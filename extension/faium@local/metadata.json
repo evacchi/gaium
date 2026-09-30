@@ -1,0 +1,8 @@
+{
+  "uuid": "faium@local",
+  "name": "FAIUM",
+  "description": "Fedora AI Usage Monitor top bar indicator.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 1,
+  "url": "https://example.invalid/faium"
+}
