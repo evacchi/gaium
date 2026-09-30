@@ -90,6 +90,15 @@ FAIUM writes `cost_usd` into the state file and the panel menu displays that mon
 
 Claude logs include input, output, cache-write, and cache-read token counters, so Claude spend estimates include prompt caching. Codex Desktop currently exposes thread-level `tokens_used` totals locally, not a full input/output/cache breakdown, so Codex spend is marked with `cost_estimated: true` and `cost_notes: ["total tokens only"]`.
 
+Normalize estimates to your observed monthly provider spend with:
+
+```bash
+faium calibrate --window month claude=7 codex=8
+faium collect --window month
+```
+
+Calibration writes multipliers to `~/.config/faium/calibration.json`. The state file keeps both `raw_cost_usd` and normalized `cost_usd`, and marks calibrated rows with `cost_notes: ["calibrated"]`.
+
 Pricing changes over time. Update `faium/pricing.py` when provider rates change or when you want to use account-specific contract rates.
 
 ## Shortcut Recipe

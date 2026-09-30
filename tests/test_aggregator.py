@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 import unittest
 
-from faium.aggregator import collect_usage, parse_window
+from faium.aggregator import collect_usage, parse_window, write_calibration
 
 
 class AggregatorTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class AggregatorTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-                state = collect_usage({"codex": [log_root]})
+                state = collect_usage({"codex": [log_root]}, calibration_path=None)
 
                 self.assertEqual(state["totals"]["input_tokens"], 110)
                 self.assertEqual(state["totals"]["output_tokens"], 45)
@@ -49,7 +49,7 @@ class AggregatorTests(unittest.TestCase):
                 self.assertEqual(state["agents"][0]["active_model"], "gpt-test-2")
 
     def test_collects_window_label(self) -> None:
-        state = collect_usage({"codex": []}, window_label="month")
+        state = collect_usage({"codex": []}, window_label="month", calibration_path=None)
 
         self.assertEqual(state["window"]["label"], "month")
 
@@ -95,7 +95,7 @@ class AggregatorTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            state = collect_usage({"codex": [db_path]})
+            state = collect_usage({"codex": [db_path]}, calibration_path=None)
 
         self.assertEqual(state["totals"]["total_tokens"], 1234)
         self.assertEqual(state["totals"]["requests"], 1)
@@ -132,7 +132,7 @@ class AggregatorTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            state = collect_usage({"claude": [log_root]})
+            state = collect_usage({"claude": [log_root]}, calibration_path=None)
 
         self.assertEqual(state["totals"]["total_tokens"], 6402)
         self.assertEqual(state["totals"]["cache_creation_input_tokens"], 3000)
@@ -140,11 +140,55 @@ class AggregatorTests(unittest.TestCase):
         self.assertAlmostEqual(state["totals"]["cost_usd"], 0.03776)
         self.assertFalse(state["totals"]["cost_estimated"])
 
+    def test_applies_agent_cost_calibration(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db_path = root / "state_5.sqlite"
+            calibration_path = root / "calibration.json"
+            write_calibration({"codex": 0.5}, calibration_path)
+
+            connection = sqlite3.connect(db_path)
+            try:
+                connection.execute(
+                    """
+                    create table threads (
+                        id text primary key,
+                        model text,
+                        model_provider text,
+                        tokens_used integer not null,
+                        created_at integer,
+                        created_at_ms integer,
+                        updated_at integer,
+                        updated_at_ms integer
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    insert into threads (
+                        id, model, model_provider, tokens_used, created_at, created_at_ms, updated_at, updated_at_ms
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("thread-1", "gpt-5.5", "openai", 1000, 1790780000, 1790780000000, 1790790000, 1790790000000),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            state = collect_usage({"codex": [db_path]}, calibration_path=calibration_path)
+
+        self.assertAlmostEqual(state["agents"][0]["raw_cost_usd"], 0.005)
+        self.assertAlmostEqual(state["agents"][0]["cost_usd"], 0.0025)
+        self.assertEqual(state["agents"][0]["cost_calibration_factor"], 0.5)
+        self.assertIn("calibrated", state["agents"][0]["cost_notes"])
+
     def test_ignores_missing_roots(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as directory:
-            state = collect_usage({"claude": [Path(directory) / "missing"]})
+            state = collect_usage({"claude": [Path(directory) / "missing"]}, calibration_path=None)
 
         self.assertEqual(state["totals"]["total_tokens"], 0)
         self.assertEqual(state["agents"], [])

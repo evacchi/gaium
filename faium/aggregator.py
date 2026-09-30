@@ -11,6 +11,7 @@ from .pricing import estimate_cost_usd
 
 
 DEFAULT_STATE_PATH = Path("~/.local/state/ai-agent-usage.json").expanduser()
+DEFAULT_CALIBRATION_PATH = Path("~/.config/faium/calibration.json").expanduser()
 DEFAULT_LOG_ROOTS = {
     "codex": [
         Path("~/.codex/sessions").expanduser(),
@@ -36,6 +37,8 @@ class UsageSample:
     cache_creation_1h_input_tokens: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
+    raw_cost_usd: float = 0.0
+    cost_calibration_factor: float = 1.0
     cost_estimated: bool = False
     cost_note: str | None = None
     requests: int = 1
@@ -51,6 +54,8 @@ class AgentAggregate:
     cache_read_input_tokens: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
+    raw_cost_usd: float = 0.0
+    cost_calibration_factor: float = 1.0
     cost_estimated: bool = False
     cost_notes: set[str] = field(default_factory=set)
     requests: int = 0
@@ -65,6 +70,7 @@ class AgentAggregate:
         self.cache_read_input_tokens += sample.cache_read_input_tokens
         self.total_tokens += sample.total_tokens
         self.cost_usd += sample.cost_usd
+        self.raw_cost_usd += sample.raw_cost_usd or sample.cost_usd
         self.cost_estimated = self.cost_estimated or sample.cost_estimated
         if sample.cost_note:
             self.cost_notes.add(sample.cost_note)
@@ -86,6 +92,7 @@ def collect_usage(
     roots: dict[str, list[Path]] | None = None,
     since: datetime | None = None,
     window_label: str | None = None,
+    calibration_path: Path | None = DEFAULT_CALIBRATION_PATH,
 ) -> dict[str, Any]:
     roots = roots or DEFAULT_LOG_ROOTS
     samples = list(iter_usage_samples(roots, since=since))
@@ -95,6 +102,9 @@ def collect_usage(
         aggregate = agents.setdefault(sample.agent, AgentAggregate(name=sample.agent))
         aggregate.add(sample)
 
+    calibration = load_calibration(calibration_path)
+    apply_calibration(agents, calibration)
+
     generated_at = datetime.now(UTC)
     agent_rows = [agent_to_json(agent) for agent in sorted(agents.values(), key=lambda row: row.name)]
     totals = {
@@ -103,7 +113,9 @@ def collect_usage(
         "cache_creation_input_tokens": sum(row["cache_creation_input_tokens"] for row in agent_rows),
         "cache_read_input_tokens": sum(row["cache_read_input_tokens"] for row in agent_rows),
         "total_tokens": sum(row["total_tokens"] for row in agent_rows),
+        "raw_cost_usd": round(sum(row["raw_cost_usd"] for row in agent_rows), 6),
         "cost_usd": round(sum(row["cost_usd"] for row in agent_rows), 6),
+        "cost_normalized": any(row["cost_calibration_factor"] != 1.0 for row in agent_rows),
         "cost_estimated": any(row["cost_estimated"] for row in agent_rows),
         "requests": sum(row["requests"] for row in agent_rows),
     }
@@ -202,6 +214,7 @@ def iter_codex_sqlite_samples(path: Path, since: datetime | None = None) -> Iter
                 model=model or model_provider,
                 total_tokens=int(tokens_used or 0),
                 cost_usd=cost_usd,
+                raw_cost_usd=cost_usd,
                 cost_estimated=cost_estimated,
                 cost_note=cost_note,
                 timestamp=timestamp or timestamp_from_epoch(created_at_ms) or timestamp_from_epoch(created_at),
@@ -322,6 +335,7 @@ def sample_from_event(agent: str, path: Path, event: dict[str, Any]) -> UsageSam
         cache_creation_1h_input_tokens=cache_creation_1h_input_tokens,
         total_tokens=total_tokens,
         cost_usd=cost_usd,
+        raw_cost_usd=cost_usd,
         cost_estimated=cost_estimated,
         cost_note=cost_note,
         timestamp=timestamp,
@@ -337,6 +351,59 @@ def write_state(state: dict[str, Any], output: Path = DEFAULT_STATE_PATH) -> Pat
     return output
 
 
+def load_calibration(path: Path | None = DEFAULT_CALIBRATION_PATH) -> dict[str, float]:
+    if path is None:
+        return {}
+
+    path = path.expanduser()
+    if not path.exists():
+        return {}
+
+    parsed = parse_json(path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        return {}
+
+    agents = parsed.get("agents", parsed)
+    if not isinstance(agents, dict):
+        return {}
+
+    calibration = {}
+    for agent, value in agents.items():
+        if isinstance(value, dict):
+            value = value.get("cost_multiplier", value.get("multiplier"))
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) and value >= 0:
+            calibration[str(agent)] = float(value)
+    return calibration
+
+
+def write_calibration(calibration: dict[str, float], path: Path = DEFAULT_CALIBRATION_PATH) -> Path:
+    path = path.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "agents": {
+            agent: {"cost_multiplier": multiplier}
+            for agent, multiplier in sorted(calibration.items())
+        },
+    }
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temp.replace(path)
+    return path
+
+
+def apply_calibration(agents: dict[str, AgentAggregate], calibration: dict[str, float]) -> None:
+    for agent_name, aggregate in agents.items():
+        factor = calibration.get(agent_name, 1.0)
+        aggregate.cost_calibration_factor = factor
+        aggregate.cost_usd = aggregate.raw_cost_usd * factor
+        if factor != 1.0:
+            aggregate.cost_estimated = True
+            aggregate.cost_notes.add("calibrated")
+
+
 def agent_to_json(agent: AgentAggregate) -> dict[str, Any]:
     return {
         "name": agent.name,
@@ -345,7 +412,9 @@ def agent_to_json(agent: AgentAggregate) -> dict[str, Any]:
         "cache_creation_input_tokens": agent.cache_creation_input_tokens,
         "cache_read_input_tokens": agent.cache_read_input_tokens,
         "total_tokens": agent.total_tokens,
+        "raw_cost_usd": round(agent.raw_cost_usd, 6),
         "cost_usd": round(agent.cost_usd, 6),
+        "cost_calibration_factor": round(agent.cost_calibration_factor, 8),
         "cost_estimated": agent.cost_estimated,
         "cost_notes": sorted(agent.cost_notes),
         "requests": agent.requests,
