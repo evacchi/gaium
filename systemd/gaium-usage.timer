@@ -1,11 +1,11 @@
 [Unit]
-Description=Refresh Fedora AI Usage Monitor state every 15 minutes
+Description=Refresh GNOME AI Usage Monitor state every 15 minutes
 
 [Timer]
 OnBootSec=2min
 OnUnitActiveSec=15min
 Persistent=true
-Unit=faium-usage.service
+Unit=gaium-usage.service
 
 [Install]
 WantedBy=timers.target

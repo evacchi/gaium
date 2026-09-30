@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="faium", description="Fedora AI Usage Monitor")
+    parser = argparse.ArgumentParser(prog="gaium", description="GNOME AI Usage Monitor")
     subparsers = parser.add_subparsers(dest="command")
 
     collect = subparsers.add_parser("collect", help="Aggregate local AI agent usage logs")
@@ -70,7 +70,7 @@ def collect_command(args: argparse.Namespace) -> int:
 def show_command(args: argparse.Namespace) -> int:
     state_path = args.state.expanduser()
     if not state_path.exists():
-        print(f"No FAIUM state found at {state_path}", file=sys.stderr)
+        print(f"No GAIUM state found at {state_path}", file=sys.stderr)
         return 1
 
     state = json.loads(state_path.read_text(encoding="utf-8"))

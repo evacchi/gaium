@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 import unittest
 
-from faium.aggregator import collect_usage, parse_window, write_calibration
+from gaium.aggregator import collect_usage, parse_window, write_calibration
 
 
 class AggregatorTests(unittest.TestCase):

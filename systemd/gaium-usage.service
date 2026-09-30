@@ -1,0 +1,6 @@
+[Unit]
+Description=Collect GNOME AI Usage Monitor state
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/gaium collect --window 24h

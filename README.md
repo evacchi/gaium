@@ -1,6 +1,6 @@
-# FAIUM
+# GAIUM
 
-FAIUM is the Fedora AI Usage Monitor: a GNOME Shell top-bar indicator plus a local usage aggregation pipeline for AI agent logs.
+GAIUM is the GNOME AI Usage Monitor: a GNOME Shell top-bar indicator plus a local usage aggregation pipeline for AI agent logs.
 
 The first implementation uses a simple local JSON state file:
 
@@ -13,8 +13,8 @@ The Python CLI refreshes that file. The GNOME Shell extension watches the file a
 ## Repository Layout
 
 ```text
-faium/                    Python aggregator CLI
-extension/faium@local/    GNOME Shell extension
+gaium/                    Python aggregator CLI
+extension/gaium@local/    GNOME Shell extension
 systemd/                  User service and timer
 scripts/                  Local install helpers
 tests/                    Aggregator tests
@@ -28,16 +28,10 @@ Install the runtime CLI wrapper into `~/.local/bin`:
 scripts/install-cli.sh
 ```
 
-Generate the first usage state file:
+Generate the first monthly usage state file:
 
 ```bash
-faium collect --window 24h
-```
-
-For a calendar-month total, use:
-
-```bash
-faium collect --window month
+gaium collect --window month
 ```
 
 `month` starts at local midnight on the first day of the current calendar month. Rolling windows such as `24h` and `7d` count backward from the current time.
@@ -46,16 +40,20 @@ This runtime path intentionally does not require `uv` or `pip`; it is what the s
 
 For development, use `uv`.
 
-Install and enable the GNOME extension:
+Install the GNOME extension files:
 
 ```bash
 scripts/install-extension.sh
-gnome-extensions enable faium@local
 ```
 
-Run those as two separate commands. The install script packages the extension and installs it through `gnome-extensions install --force` when GNOME's extension tooling is available.
+On first install, or after changing the extension UUID, GNOME Shell may not discover the new local extension until the next session. If `gnome-extensions enable gaium@local` says the extension does not exist, restart the PC or log out and back in, then run:
 
-If the extension does not appear immediately, restart GNOME Shell or log out and back in. On Wayland, logging out and back in is the reliable path.
+```bash
+gnome-extensions list --user | grep gaium
+gnome-extensions enable gaium@local
+```
+
+On Wayland, logging out and back in or restarting the PC is the reliable way to refresh GNOME Shell's local extension registry.
 
 Enable the 15-minute background refresh timer:
 
@@ -66,12 +64,12 @@ scripts/install-systemd-user.sh
 Check the timer:
 
 ```bash
-systemctl --user status faium-usage.timer
+systemctl --user status gaium-usage.timer
 ```
 
 ## Agent Logs
 
-FAIUM currently scans these local paths when present:
+GAIUM currently scans these local paths when present:
 
 ```text
 ~/.codex/state_5.sqlite
@@ -86,20 +84,20 @@ For Codex Desktop, it reads `tokens_used`, `model`, and thread timestamps from `
 
 ## Spend Estimates
 
-FAIUM writes `cost_usd` into the state file and the panel menu displays that monthly aggregate spend. When logs do not contain a provider-billed cost, FAIUM estimates spend from bundled per-model pricing in `faium/pricing.py`.
+GAIUM writes `cost_usd` into the state file and the panel menu displays that monthly aggregate spend. When logs do not contain a provider-billed cost, GAIUM estimates spend from bundled per-model pricing in `gaium/pricing.py`.
 
 Claude logs include input, output, cache-write, and cache-read token counters, so Claude spend estimates include prompt caching. Codex Desktop currently exposes thread-level `tokens_used` totals locally, not a full input/output/cache breakdown, so Codex spend is marked with `cost_estimated: true` and `cost_notes: ["total tokens only"]`.
 
 Normalize estimates to your observed monthly provider spend with:
 
 ```bash
-faium calibrate --window month claude=7 codex=8
-faium collect --window month
+gaium calibrate --window month claude=7 codex=8
+gaium collect --window month
 ```
 
-Calibration writes multipliers to `~/.config/faium/calibration.json`. The state file keeps both `raw_cost_usd` and normalized `cost_usd`, and marks calibrated rows with `cost_notes: ["calibrated"]`.
+Calibration writes multipliers to `~/.config/gaium/calibration.json`. The state file keeps both `raw_cost_usd` and normalized `cost_usd`, and marks calibrated rows with `cost_notes: ["calibrated"]`.
 
-Pricing changes over time. Update `faium/pricing.py` when provider rates change or when you want to use account-specific contract rates.
+Pricing changes over time. Update `gaium/pricing.py` when provider rates change or when you want to use account-specific contract rates.
 
 ## Shortcut Recipe
 
@@ -128,7 +126,7 @@ a() {
 
 ## Development
 
-FAIUM is managed with `uv`. Create or refresh the local virtual environment and lockfile:
+GAIUM is managed with `uv`. Create or refresh the local virtual environment and lockfile:
 
 ```bash
 uv sync
@@ -143,13 +141,13 @@ uv run python -m unittest discover
 Refresh state while developing:
 
 ```bash
-uv run faium collect --window 24h --watch --interval 30
+uv run gaium collect --window 24h --watch --interval 30
 ```
 
 Refresh the current calendar month while developing:
 
 ```bash
-uv run faium collect --window month --watch --interval 30
+uv run gaium collect --window month --watch --interval 30
 ```
 
 The helper scripts wrap those commands:
@@ -159,4 +157,4 @@ scripts/dev-test.sh
 scripts/dev-collect.sh
 ```
 
-FAIUM currently has no third-party Python runtime dependencies. If you do not have `uv`, install it with Fedora's package manager when available, or use the standalone installer from Astral. As a fallback for traditional Python packaging, `python -m pip install --user -e .` also works once `python3-pip` is installed.
+GAIUM currently has no third-party Python runtime dependencies. If you do not have `uv`, install it with your distribution's package manager when available, or use the standalone installer from Astral. As a fallback for traditional Python packaging, `python -m pip install --user -e .` also works once `python3-pip` is installed.

@@ -3,23 +3,23 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "faium"
+name = "gaium"
 version = "0.1.0"
-description = "Fedora AI Usage Monitor aggregator for local AI agent logs."
+description = "GNOME AI Usage Monitor aggregator for local AI agent logs."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "FAIUM contributors" }]
+authors = [{ name = "GAIUM contributors" }]
 dependencies = []
 
 [dependency-groups]
 dev = []
 
 [project.scripts]
-faium = "faium.cli:main"
+gaium = "gaium.cli:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools.packages.find]
-include = ["faium*"]
+include = ["gaium*"]

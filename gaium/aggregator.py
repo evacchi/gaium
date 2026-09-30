@@ -11,7 +11,7 @@ from .pricing import estimate_cost_usd
 
 
 DEFAULT_STATE_PATH = Path("~/.local/state/ai-agent-usage.json").expanduser()
-DEFAULT_CALIBRATION_PATH = Path("~/.config/faium/calibration.json").expanduser()
+DEFAULT_CALIBRATION_PATH = Path("~/.config/gaium/calibration.json").expanduser()
 DEFAULT_LOG_ROOTS = {
     "codex": [
         Path("~/.codex/sessions").expanduser(),

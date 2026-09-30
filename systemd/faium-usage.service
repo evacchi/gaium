@@ -1,6 +1,0 @@
-[Unit]
-Description=Collect Fedora AI Usage Monitor state
-
-[Service]
-Type=oneshot
-ExecStart=%h/.local/bin/faium collect --window 24h

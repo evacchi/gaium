@@ -12,14 +12,14 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 const STATE_FILE = GLib.build_filenamev([GLib.get_user_state_dir(), 'ai-agent-usage.json']);
 const REFRESH_SECONDS = 30;
 
-const FAIUMIndicator = GObject.registerClass(
-class FAIUMIndicator extends PanelMenu.Button {
+const GAIUMIndicator = GObject.registerClass(
+class GAIUMIndicator extends PanelMenu.Button {
     _init() {
-        super._init(0.0, 'FAIUM');
+        super._init(0.0, 'GAIUM');
 
         this._label = new St.Label({
             text: 'AI --',
-            style_class: 'faium-panel-label',
+            style_class: 'gaium-panel-label',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this.add_child(this._label);
@@ -68,7 +68,7 @@ class FAIUMIndicator extends PanelMenu.Button {
             this._monitor = file.monitor_file(Gio.FileMonitorFlags.NONE, null);
             this._monitor.connect('changed', () => this._refresh());
         } catch (error) {
-            log(`FAIUM: unable to monitor ${STATE_FILE}: ${error.message}`);
+            log(`GAIUM: unable to monitor ${STATE_FILE}: ${error.message}`);
         }
     }
 
@@ -90,7 +90,7 @@ class FAIUMIndicator extends PanelMenu.Button {
     _renderMissingState() {
         this._label.text = 'AI --';
         this._summary.label.text = `No state file at ${STATE_FILE}`;
-        this._updated.label.text = 'Run: faium collect';
+        this._updated.label.text = 'Run: gaium collect';
         this._agentsSection.removeAll();
     }
 
@@ -151,9 +151,9 @@ function formatWindowLabel(value) {
     return value;
 }
 
-export default class FAIUMExtension extends Extension {
+export default class GAIUMExtension extends Extension {
     enable() {
-        this._indicator = new FAIUMIndicator();
+        this._indicator = new GAIUMIndicator();
         Main.panel.addToStatusArea(this.uuid, this._indicator);
     }
 

@@ -7,10 +7,10 @@ unit_dir="${HOME}/.config/systemd/user"
 "${repo_root}/scripts/install-cli.sh"
 
 mkdir -p "${unit_dir}"
-cp "${repo_root}/systemd/faium-usage.service" "${unit_dir}/"
-cp "${repo_root}/systemd/faium-usage.timer" "${unit_dir}/"
+cp "${repo_root}/systemd/gaium-usage.service" "${unit_dir}/"
+cp "${repo_root}/systemd/gaium-usage.timer" "${unit_dir}/"
 
 systemctl --user daemon-reload
-systemctl --user enable --now faium-usage.timer
+systemctl --user enable --now gaium-usage.timer
 
-echo "Enabled faium-usage.timer"
+echo "Enabled gaium-usage.timer"
