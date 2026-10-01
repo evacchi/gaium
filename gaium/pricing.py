@@ -21,6 +21,8 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "claude-opus-4-5": ModelPricing(5.0, 25.0, 0.50, 6.25, 10.0),
     "claude-sonnet-5": ModelPricing(3.0, 15.0, 0.30, 3.75, 6.0),
     "claude-sonnet-4-6": ModelPricing(3.0, 15.0, 0.30, 3.75, 6.0),
+    "claude-sonnet-4-5": ModelPricing(3.0, 15.0, 0.30, 3.75, 6.0),
+    "claude-haiku-4-5": ModelPricing(1.0, 5.0, 0.10, 1.25, 2.0),
     "gpt-5.4": ModelPricing(2.50, 15.0, 0.25, total_only_per_mtok=2.50),
     "gpt-5.5": ModelPricing(5.0, 30.0, 0.50, total_only_per_mtok=5.0),
     "gpt-5.6-sol": ModelPricing(4.0, 20.0, 0.40, total_only_per_mtok=4.0),
@@ -91,10 +93,15 @@ def find_pricing(model: str | None) -> ModelPricing | None:
     if normalized in MODEL_PRICING:
         return MODEL_PRICING[normalized]
 
-    if normalized.startswith("claude-opus-"):
-        return MODEL_PRICING["claude-opus-5"]
-    if normalized.startswith("claude-sonnet-"):
-        return MODEL_PRICING["claude-sonnet-5"]
+    # Claude transcript model IDs may append a release date. Match only that
+    # known date form so an unrelated/newer model such as opus-5-5 does not
+    # silently inherit opus-5 pricing.
+    for known_model, pricing in MODEL_PRICING.items():
+        if not known_model.startswith("claude-") or not normalized.startswith(f"{known_model}-"):
+            continue
+        suffix = normalized[len(known_model) + 1 :]
+        if len(suffix) >= 8 and suffix[:8].isdigit():
+            return pricing
 
     return None
 

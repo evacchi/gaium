@@ -12,6 +12,22 @@ from .pricing import estimate_cost_usd
 
 DEFAULT_STATE_PATH = Path("~/.local/state/ai-agent-usage.json").expanduser()
 DEFAULT_CALIBRATION_PATH = Path("~/.config/gaium/calibration.json").expanduser()
+DEFAULT_LOCAL_CONFIG_PATH = Path(__file__).resolve().parent.parent / ".gaium.local.json"
+CLAUDE_IDENTITY_FIELDS = {
+    "accountuuid",
+    "claude_code_account_uuid",
+    "claude_code_organization_uuid",
+    "organizationuuid",
+    "owneraccountuuid",
+    "ownerorganizationuuid",
+}
+CLAUDE_SESSION_FIELDS = {
+    "sessionid",
+    "sessionuuid",
+    "bridgesessionid",
+    "conversationid",
+    "transcriptid",
+}
 DEFAULT_LOG_ROOTS = {
     "codex": [
         Path("~/.codex/sessions").expanduser(),
@@ -93,9 +109,22 @@ def collect_usage(
     since: datetime | None = None,
     window_label: str | None = None,
     calibration_path: Path | None = DEFAULT_CALIBRATION_PATH,
+    excluded_claude_identity_ids: set[str] | None = None,
+    excluded_claude_session_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     roots = roots or DEFAULT_LOG_ROOTS
-    samples = list(iter_usage_samples(roots, since=since))
+    if excluded_claude_identity_ids is None:
+        excluded_claude_identity_ids = load_excluded_claude_identity_ids()
+    if excluded_claude_session_ids is None:
+        excluded_claude_session_ids = load_excluded_claude_session_ids()
+    samples = list(
+        iter_usage_samples(
+            roots,
+            since=since,
+            excluded_claude_identity_ids=excluded_claude_identity_ids,
+            excluded_claude_session_ids=excluded_claude_session_ids,
+        )
+    )
 
     agents: dict[str, AgentAggregate] = {}
     for sample in samples:
@@ -136,8 +165,33 @@ def collect_usage(
 def iter_usage_samples(
     roots: dict[str, list[Path]],
     since: datetime | None = None,
+    excluded_claude_identity_ids: set[str] | None = None,
+    excluded_claude_session_ids: set[str] | None = None,
 ) -> Iterable[UsageSample]:
+    if excluded_claude_identity_ids is None:
+        excluded_claude_identity_ids = load_excluded_claude_identity_ids()
+    if excluded_claude_session_ids is None:
+        excluded_claude_session_ids = load_excluded_claude_session_ids()
+
+    claude_paths = sorted(
+        {
+            path
+            for root in roots.get("claude", [])
+            if root.exists()
+            for path in iter_log_files(root)
+        }
+    )
+    if claude_paths:
+        yield from iter_claude_usage_samples(
+            claude_paths,
+            since=since,
+            excluded_identity_ids=excluded_claude_identity_ids,
+            configured_excluded_session_ids=excluded_claude_session_ids,
+        )
+
     for agent, paths in roots.items():
+        if agent == "claude":
+            continue
         for root in paths:
             if not root.exists():
                 continue
@@ -154,6 +208,115 @@ def iter_usage_samples(
                     if since and sample.timestamp and sample.timestamp < since:
                         continue
                     yield sample
+
+
+def iter_claude_usage_samples(
+    paths: list[Path],
+    since: datetime | None,
+    excluded_identity_ids: set[str],
+    configured_excluded_session_ids: set[str],
+) -> Iterable[UsageSample]:
+    excluded_session_ids = set(configured_excluded_session_ids)
+    identity_paths: set[Path] = set()
+    sessions_by_path: dict[Path, set[str]] = {}
+
+    # Claude stores account metadata and transcript events in separate files.
+    # Read all session identifiers first so an identity match excludes the
+    # corresponding transcript and sidecar logs, regardless of file order.
+    for path in paths:
+        session_ids: set[str] = set()
+        for event in iter_json_events(path):
+            event_session_ids = claude_session_ids(event)
+            session_ids.update(event_session_ids)
+            if excluded_identity_ids and contains_claude_identity(event, excluded_identity_ids):
+                identity_paths.add(path)
+                excluded_session_ids.update(event_session_ids)
+        sessions_by_path[path] = session_ids
+
+    for path in paths:
+        if path in identity_paths or sessions_by_path[path] & excluded_session_ids:
+            continue
+
+        # Claude may emit several JSONL records for one assistant message as
+        # its content blocks stream in. Usage is cumulative, so retain only
+        # the latest record for each message ID.
+        samples_by_message: dict[str, tuple[datetime | None, int, UsageSample]] = {}
+        for index, event in enumerate(iter_json_events(path)):
+            sample = sample_from_event("claude", path, event)
+            if sample is None:
+                continue
+            if since and sample.timestamp and sample.timestamp < since:
+                continue
+
+            message_id = first_string(event, ("message.id",))
+            key = f"message:{message_id}" if message_id else f"event:{index}"
+            previous = samples_by_message.get(key)
+            current_order = (sample.timestamp or datetime.min.replace(tzinfo=UTC), index)
+            previous_order = (
+                (previous[0] or datetime.min.replace(tzinfo=UTC), previous[1])
+                if previous
+                else None
+            )
+            if previous_order is None or current_order >= previous_order:
+                samples_by_message[key] = (sample.timestamp, index, sample)
+
+        yield from (entry[2] for entry in samples_by_message.values())
+
+
+def claude_session_ids(event: dict[str, Any]) -> set[str]:
+    return {
+        value
+        for key, value in walk_json(event)
+        if "".join(character for character in key.casefold() if character.isalnum())
+        in CLAUDE_SESSION_FIELDS
+        and isinstance(value, str)
+        and value
+    }
+
+
+def load_excluded_claude_identity_ids(path: Path = DEFAULT_LOCAL_CONFIG_PATH) -> set[str]:
+    try:
+        parsed = parse_json(path.read_text(encoding="utf-8"))
+    except OSError:
+        return set()
+
+    if not isinstance(parsed, dict):
+        return set()
+    values = parsed.get("exclude_claude_identity_ids", [])
+    if not isinstance(values, list):
+        return set()
+    return {value.strip() for value in values if isinstance(value, str) and value.strip()}
+
+
+def load_excluded_claude_session_ids(path: Path = DEFAULT_LOCAL_CONFIG_PATH) -> set[str]:
+    try:
+        parsed = parse_json(path.read_text(encoding="utf-8"))
+    except OSError:
+        return set()
+
+    if not isinstance(parsed, dict):
+        return set()
+    values = parsed.get("exclude_claude_session_ids", [])
+    if not isinstance(values, list):
+        return set()
+    return {value.strip() for value in values if isinstance(value, str) and value.strip()}
+
+
+def contains_claude_identity(event: dict[str, Any], identities: set[str]) -> bool:
+    for key, value in walk_json(event):
+        if key.casefold() in CLAUDE_IDENTITY_FIELDS and isinstance(value, str) and value in identities:
+            return True
+    return False
+
+
+def walk_json(value: Any) -> Iterable[tuple[str, Any]]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield str(key), child
+            yield from walk_json(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from walk_json(child)
 
 
 def iter_log_files(root: Path) -> Iterable[Path]:

@@ -36,6 +36,13 @@ gaium collect --window month
 
 `month` starts at local midnight on the first day of the current calendar month. Rolling windows such as `24h` and `7d` count backward from the current time.
 
+Display the saved usage as a terminal table, or print the raw JSON for scripting:
+
+```bash
+gaium show
+gaium show --json
+```
+
 This runtime path intentionally does not require `uv` or `pip`; it is what the systemd user timer uses.
 
 For development, use `uv`.
@@ -82,11 +89,22 @@ For Claude-style logs, it accepts JSON, JSONL, log, and text files that contain 
 
 For Codex Desktop, it reads `tokens_used`, `model`, and thread timestamps from `~/.codex/state_5.sqlite`. Codex rows are currently thread-level totals, filtered by each thread's last updated time.
 
+To exclude Claude transcripts associated with specific account or organization UUIDs, list those UUIDs in the repo-local, git-ignored `.gaium.local.json` file:
+
+```json
+{
+  "exclude_claude_identity_ids": ["account-uuid", "organization-uuid"],
+  "exclude_claude_session_ids": ["session-uuid"]
+}
+```
+
+GAIUM skips the entire Claude session when a structured identity field in any event matches one of the identity values, or when its session ID is listed explicitly. Claude can write identity metadata and transcript events to separate files, so GAIUM also excludes files linked by a matching session ID. It does not exclude a transcript merely because an ID appears in conversation text.
+
 ## Spend Estimates
 
 GAIUM writes `cost_usd` into the state file and the panel menu displays that monthly aggregate spend. When logs do not contain a provider-billed cost, GAIUM estimates spend from bundled per-model pricing in `gaium/pricing.py`.
 
-Claude logs include input, output, cache-write, and cache-read token counters, so Claude spend estimates include prompt caching. Codex Desktop currently exposes thread-level `tokens_used` totals locally, not a full input/output/cache breakdown, so Codex spend is marked with `cost_estimated: true` and `cost_notes: ["total tokens only"]`.
+Claude logs include input, output, cache-write, and cache-read token counters, so Claude spend estimates include prompt caching. Repeated streaming records with the same assistant message ID are counted once using the latest cumulative usage. Claude model IDs with release-date suffixes use the corresponding known model price; unknown model versions are left unpriced instead of inheriting a rate from a broad model-name prefix. Codex Desktop currently exposes thread-level `tokens_used` totals locally, not a full input/output/cache breakdown, so Codex spend is marked with `cost_estimated: true` and `cost_notes: ["total tokens only"]`.`
 
 Normalize estimates to your observed monthly provider spend with:
 
