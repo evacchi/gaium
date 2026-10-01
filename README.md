@@ -43,6 +43,14 @@ gaium show
 gaium show --json
 ```
 
+On macOS, install the xbar menu bar plugin with:
+
+```bash
+scripts/install-xbar-plugin.sh
+```
+
+The plugin refreshes the current calendar month's usage every five minutes and shows agent totals in the xbar menu.
+
 This runtime path intentionally does not require `uv` or `pip`; it is what the systemd user timer uses.
 
 For development, use `uv`.
